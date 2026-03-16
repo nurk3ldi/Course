@@ -1,0 +1,10 @@
+{
+  "name": "course-platform",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "concurrently \"node server/index.js\" \"npm run dev --prefix client\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
