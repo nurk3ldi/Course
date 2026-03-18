@@ -6,18 +6,23 @@ const { initDB } = require('./db');
 
 const authRoutes = require('./routes/authRoutes');
 const courseRoutes = require('./routes/courseRoutes');
-const userRoutes = require('./routes/userRoutes');
+const lessonRoutes = require('./routes/lessonRoutes');
+const assignmentRoutes = require('./routes/assignmentRoutes');
+const fileRoutes = require('./routes/fileRoutes');
+const orderRoutes = require('./routes/orderRoutes');
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
-
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/storage/private', express.static(path.join(__dirname, 'storage/private')));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/courses', courseRoutes);
-app.use('/api/users', userRoutes);
+app.use('/api/lessons', lessonRoutes);
+app.use('/api/assignments', assignmentRoutes);
+app.use('/api/files', fileRoutes);
+app.use('/api/orders', orderRoutes);
 
 const PORT = process.env.PORT || 5000;
 
