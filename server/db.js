@@ -26,6 +26,8 @@ const initDB = async () => {
             role_id INT REFERENCES roles(id) ON DELETE SET NULL,
             phone VARCHAR(50),
             status VARCHAR(20) DEFAULT 'active',
+            reset_code VARCHAR(6),
+            reset_expires TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -120,12 +122,18 @@ const initDB = async () => {
         );
     `);
 
-    // Қате осы жерде болған, енді дұрыс жазылды
+    try {
+        await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_code VARCHAR(6);`);
+        await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_expires TIMESTAMP;`);
+    } catch (error) {
+        console.log("Бағандарды қосу кезіндегі қате (бұрыннан бар болуы мүмкін):", error.message);
+    }
+
     const roles = ['admin', 'employee', 'client', 'student'];
     for (const role of roles) {
         await pool.query(
             'INSERT INTO roles (role_name, description) VALUES ($1, $2) ON CONFLICT (role_name) DO NOTHING',
-            [role, `Role for ${role}`] 
+            [role, `Role for ${role}`]
         );
     }
 
