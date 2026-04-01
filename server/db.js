@@ -122,6 +122,10 @@ const initDB = async () => {
         );
     `);
 
+    // Добавления колонок для типов заданий и ресурсов
+    await pool.query(`ALTER TABLE assignments ADD COLUMN IF NOT EXISTS task_type VARCHAR(20) DEFAULT 'text';`);
+    await pool.query(`ALTER TABLE assignments ADD COLUMN IF NOT EXISTS resource_url TEXT;`);
+
     try {
         await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_code VARCHAR(6);`);
         await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_expires TIMESTAMP;`);

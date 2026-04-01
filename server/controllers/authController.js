@@ -6,17 +6,36 @@ const { pool } = require('../db');
 const register = async (req, res) => {
     try {
         const { name, email, password, phone } = req.body;
+
+        // 1. Проверяем, не занят ли email
+        const userExists = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+        if (userExists.rows.length > 0) {
+            return res.status(400).json({ error: "Пользователь с таким email уже существует" });
+        }
+
         const password_hash = await bcrypt.hash(password, 10);
         
-        const roleRes = await pool.query("SELECT id FROM roles WHERE role_name = 'client'");
+        // 2. Получаем ID роли по умолчанию (у тебя в базе 'client' или 'student')
+        const roleRes = await pool.query("SELECT id, role_name FROM roles WHERE role_name = 'client' LIMIT 1");
+        if (roleRes.rows.length === 0) return res.status(500).json({ error: "Роль по умолчанию не найдена в БД" });
+        
         const role_id = roleRes.rows[0].id;
+        const role_name = roleRes.rows[0].role_name;
 
         const result = await pool.query(
             `INSERT INTO users (name, email, password_hash, role_id, phone, status) 
-             VALUES ($1, $2, $3, $4, $5, 'active') RETURNING id, name, email, phone, status`,
+             VALUES ($1, $2, $3, $4, $5, 'active') RETURNING id, name, email, phone, status, role_id`,
             [name || 'Student', email, password_hash, role_id, phone || '']
         );
-        res.status(201).json(result.rows[0]);
+        
+        res.status(201).json({ 
+            id: result.rows[0].id,
+            name: result.rows[0].name, 
+            email: result.rows[0].email, 
+            phone: result.rows[0].phone,
+            role_id: role_id,
+            role: role_name
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -25,37 +44,55 @@ const register = async (req, res) => {
 const login = async (req, res) => {
     try {
         const { email, password } = req.body;
+        
+        // Получаем юзера сразу с именем его роли
         const result = await pool.query(`
-            SELECT u.*, r.role_name 
+            SELECT u.id, u.name, u.email, u.password_hash, u.status, u.role_id, r.role_name 
             FROM users u
             JOIN roles r ON u.role_id = r.id
             WHERE u.email = $1
         `, [email]);
 
-        if (result.rows.length === 0) return res.status(400).json({ error: "User not found" });
+        if (result.rows.length === 0) return res.status(400).json({ error: "Пользователь не найден" });
 
         const user = result.rows[0];
-        if (user.status !== 'active') return res.status(403).json({ error: "Account blocked" });
+        if (user.status !== 'active') return res.status(403).json({ error: "Аккаунт заблокирован" });
 
         const isValid = await bcrypt.compare(password, user.password_hash);
-        if (!isValid) return res.status(400).json({ error: "Invalid password" });
+        if (!isValid) return res.status(400).json({ error: "Неверный пароль" });
 
-        const token = jwt.sign({ id: user.id, role: user.role_name }, process.env.JWT_SECRET, { expiresIn: '1d' });
-        res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role_name } });
+        // Генерируем токен, записывая туда ID и ID роли (по таблице roles)
+        const token = jwt.sign(
+            { id: user.id, role_id: user.role_id, role: user.role_name }, 
+            process.env.JWT_SECRET, 
+            { expiresIn: '1d' }
+        );
+
+        // Возвращаем данные без хеша пароля
+        res.json({ 
+            token, 
+            user: { 
+                id: user.id, 
+                name: user.name, 
+                email: user.email, 
+                role_id: user.role_id,
+                role: user.role_name 
+            } 
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 };
 
 const logout = async (req, res) => {
-    res.json({ message: "Logged out successfully" });
+    res.json({ message: "Выход выполнен успешно" });
 };
 
 const forgotPassword = async (req, res) => {
     try {
         const { email } = req.body;
         const userRes = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
-        if (userRes.rows.length === 0) return res.status(404).json({ error: "User not found" });
+        if (userRes.rows.length === 0) return res.status(404).json({ error: "Email не найден" });
 
         const code = Math.floor(100000 + Math.random() * 900000).toString();
 
@@ -64,6 +101,7 @@ const forgotPassword = async (req, res) => {
             [code, email]
         );
 
+        // Настройка почты (используем твои переменные окружения)
         const transporter = nodemailer.createTransport({
             host: 'smtp.mail.ru',
             port: 465,
@@ -75,36 +113,21 @@ const forgotPassword = async (req, res) => {
         });
 
         const emailHTML = `
-        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f9fafb; padding: 40px 20px;">
-            <div style="max-width: 500px; margin: 0 auto; background-color: #ffffff; padding: 40px 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); text-align: center;">
-                <h2 style="color: #111827; margin-top: 0; font-size: 24px;">TooOcenka LMS</h2>
-                <p style="color: #4b5563; font-size: 16px; margin-bottom: 30px; line-height: 1.5;">
-                    Вы запросили сброс пароля. Ваш код подтверждения:
-                </p>
-                
-                <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 20px; margin-bottom: 30px;">
-                    <span style="font-size: 32px; font-weight: bold; color: #1d4ed8; letter-spacing: 6px;">${code}</span>
-                </div>
-                
-                <p style="color: #6b7280; font-size: 14px; margin-bottom: 10px;">
-                    Введите этот 6-значный код на сайте, чтобы создать новый пароль. Код действителен 15 минут.
-                </p>
-                <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;" />
-                <p style="color: #9ca3af; font-size: 12px;">
-                    Если вы не запрашивали сброс пароля, просто проигнорируйте это письмо. Ваш аккаунт в безопасности.
-                </p>
-            </div>
+        <div style="font-family: sans-serif; padding: 20px;">
+            <h2>Код восстановления пароля</h2>
+            <p>Ваш код подтверждения: <strong style="font-size: 24px;">${code}</strong></p>
+            <p>Код действителен 15 минут.</p>
         </div>
         `;
 
         await transporter.sendMail({
             from: process.env.SMTP_USER,
             to: email,
-            subject: 'TooOcenka LMS: Код восстановления пароля',
+            subject: 'Восстановление пароля',
             html: emailHTML 
         });
 
-        res.json({ message: "Code sent successfully" });
+        res.json({ message: "Код отправлен на почту" });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -119,7 +142,7 @@ const resetPassword = async (req, res) => {
             [email, code]
         );
 
-        if (userRes.rows.length === 0) return res.status(400).json({ error: "Invalid or expired code" });
+        if (userRes.rows.length === 0) return res.status(400).json({ error: "Неверный или просроченный код" });
 
         const password_hash = await bcrypt.hash(newPassword, 10);
 
@@ -128,7 +151,7 @@ const resetPassword = async (req, res) => {
             [password_hash, email]
         );
 
-        res.json({ message: "Password reset successfully" });
+        res.json({ message: "Пароль успешно изменен" });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

@@ -1,26 +1,43 @@
-import { useState } from 'react'
-import { loginUser, registerUser } from './api'
+import { useState, useEffect, type FormEvent } from 'react'
+import { loginUser, registerUser, getMyCourses } from './api'
 import PasswordReset from './PasswordReset'
 import { ScrollReveal } from './components/ScrollReveal'
+import AdminCreateCourse from './components/AdminCreateCourse' // Импортируем
+import CourseViewer from './components/CourseViewer'         // Импортируем
+import AuthModal from './components/AuthModal';
 import './App.css'
 
 function App() {
   const [page, setPage] = useState('home')
+  const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null) // Для просмотра конкретного курса
+  const [currentUser, setCurrentUser] = useState<{id:number;role:string;role_id:number;name:string} | null>(null);
+  const [courses, setCourses] = useState<any[]>([]);
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [isLoginOpen, setIsLoginOpen] = useState(false); // Состояние для модалки
 
   const isLogin = page === 'login'
 
-  const handleSubmit = async (event) => {
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     try {
       if (isLogin) {
         const data = await loginUser(email, password)
         localStorage.setItem('token', data.token)
+        localStorage.setItem('role', data.user.role)
+        localStorage.setItem('role_id', data.user.role_id.toString())
+        setCurrentUser(data.user)
         alert('Вы успешно вошли в систему!')
-        setPage('home')
+
+        // Если зашел админ, переходим в админскую панель
+        if (data.user.role === 'admin') {
+          setPage('admin-create')
+        } else {
+          setPage('student-courses')
+        }
       } else {
         if (password !== confirmPassword) {
           alert('Пароли не совпадают!')
@@ -34,120 +51,137 @@ function App() {
       setEmail('')
       setPassword('')
       setConfirmPassword('')
-    } catch (error) {
-      alert(error.message)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Неизвестная ошибка'
+      alert(message)
     }
   }
 
+  useEffect(() => {
+    const loadCourses = async () => {
+      if (page === 'student-courses') {
+        try {
+          const token = localStorage.getItem('token') || '';
+          const courseList = await getMyCourses(token);
+          setCourses(courseList);
+        } catch (err: unknown) {
+          console.error('Не удалось загрузить курсы', err);
+        }
+      }
+    };
+    loadCourses();
+  }, [page]);
+
+  // Рендеринг страницы сброса пароля
   if (page === 'reset') {
     return <PasswordReset onBackToLogin={() => setPage('login')} />
   }
 
-  if (page !== 'home') {
+  // Рендеринг Админ-панели
+  if (page === 'admin-create') {
+    return (
+      <div className="root">
+        <header className="topbar">
+          <div className="topbar-brand">TooOcenka LMS | Admin</div>
+          <button className="topbar-btn topbar-btn-ghost" onClick={() => setPage('home')}>На главную</button>
+        </header>
+        <AdminCreateCourse />
+      </div>
+    )
+  }
+
+  // Рендеринг списка курсов для клиента/студента
+  if (page === 'student-courses') {
+    return (
+      <div className="root">
+        <header className="topbar">
+          <div className="topbar-brand">TooOcenka LMS | Курсы</div>
+          <button className="topbar-btn topbar-btn-ghost" onClick={() => setPage('home')}>На главную</button>
+        </header>
+        <div style={{ maxWidth: 1024, margin: '24px auto' }}>
+          <h2>Ваши курсы</h2>
+          {courses.length === 0 ? (
+            <p>Пока нет доступных курсов. Обратитесь к администратору.</p>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
+              {courses.map((course: any) => (
+                <div key={course.id} style={{ border: '1px solid #ddd', padding: 16, borderRadius: 8 }}>
+                  <h3>{course.title}</h3>
+                  <p>{course.description}</p>
+                  <button className="btn-primary" onClick={() => { setSelectedCourseId(course.id); setPage('course-view'); }}>
+                    Открыть курс
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // Рендеринг Просмотра курса
+  if (page === 'course-view' && selectedCourseId) {
+    return (
+      <div className="root">
+        <header className="topbar">
+          <div className="topbar-brand">Просмотр курса</div>
+          <button className="topbar-btn topbar-btn-ghost" onClick={() => setPage('home')}>Назад к списку</button>
+        </header>
+        <CourseViewer courseId={selectedCourseId} />
+      </div>
+    )
+  }
+
+  // Рендеринг страниц Авторизации/Регистрации
+  if (page === 'login' || page === 'register') {
     return (
       <div className="root">
         <header className="topbar">
           <div className="topbar-brand">TooOcenka LMS</div>
           <div className="topbar-actions">
-            <button className="topbar-btn topbar-btn-ghost" onClick={() => setPage('home')}>
-              На главную
-            </button>
+            <button className="topbar-btn topbar-btn-ghost" onClick={() => setPage('home')}>На главную</button>
           </div>
         </header>
 
         <div className="auth-page">
           <div className="auth-card">
             <div className="auth-label">{isLogin ? 'Вход в систему' : 'Регистрация'}</div>
-            <div className="auth-title">
-              {isLogin ? 'Войдите в личный кабинет' : 'Создайте личный кабинет'}
-            </div>
-            <div className="auth-subtitle">
-              {isLogin
-                ? 'Введите email и пароль, чтобы продолжить обучение.'
-                : 'Заполните форму, чтобы получить доступ к курсам и заданиям.'}
-            </div>
-
+            <div className="auth-title">{isLogin ? 'Войдите в личный кабинет' : 'Создайте личный кабинет'}</div>
+            
             <form className="auth-form" onSubmit={handleSubmit}>
               {!isLogin && (
                 <label className="auth-field">
                   <span>Имя и фамилия</span>
-                  <input 
-                    type="text" 
-                    placeholder="Введите имя" 
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required 
-                  />
+                  <input type="text" placeholder="Введите имя" value={name} onChange={(e) => setName(e.target.value)} required />
                 </label>
               )}
-
               <label className="auth-field">
                 <span>Email</span>
-                <input 
-                  type="email" 
-                  placeholder="you@example.com" 
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required 
-                />
+                <input type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
               </label>
-
               <label className="auth-field">
                 <span>Пароль</span>
-                <input 
-                  type="password" 
-                  placeholder="Минимум 8 символов" 
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required 
-                />
+                <input type="password" placeholder="Минимум 8 символов" value={password} onChange={(e) => setPassword(e.target.value)} required />
               </label>
 
               {isLogin && (
                 <div style={{ textAlign: 'right', marginTop: '-10px', marginBottom: '15px' }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPage('reset')
-                      setEmail('')
-                      setPassword('')
-                    }}
-                    style={{ background: 'transparent', border: 'none', color: '#3b82f6', cursor: 'pointer', fontSize: '13px', textDecoration: 'underline', padding: 0 }}
-                  >
-                    Забыли пароль?
-                  </button>
+                  <button type="button" onClick={() => setPage('reset')} className="link-btn">Забыли пароль?</button>
                 </div>
               )}
 
               {!isLogin && (
                 <label className="auth-field">
                   <span>Подтверждение пароля</span>
-                  <input 
-                    type="password" 
-                    placeholder="Повторите пароль" 
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    required 
-                  />
+                  <input type="password" placeholder="Повторите пароль" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
                 </label>
               )}
 
-              <button className="auth-submit" type="submit">
-                {isLogin ? 'Войти' : 'Зарегистрироваться'}
-              </button>
+              <button className="auth-submit" type="submit">{isLogin ? 'Войти' : 'Зарегистрироваться'}</button>
             </form>
 
-            <button
-              className="auth-switch"
-              onClick={() => {
-                setPage(isLogin ? 'register' : 'login')
-                setName('')
-                setEmail('')
-                setPassword('')
-                setConfirmPassword('')
-              }}
-              type="button"
-            >
+            <button className="auth-switch" onClick={() => setPage(isLogin ? 'register' : 'login')}>
               {isLogin ? 'Нет аккаунта? Регистрация' : 'Уже есть аккаунт? Вход'}
             </button>
           </div>
@@ -156,17 +190,24 @@ function App() {
     )
   }
 
+  // Главная страница (Home)
   return (
     <div className="root">
       <header className="topbar">
         <div className="topbar-brand">TooOcenka LMS</div>
         <div className="topbar-actions">
-          <button className="topbar-btn topbar-btn-ghost" onClick={() => setPage('login')}>
-            Вход
-          </button>
-          <button className="topbar-btn" onClick={() => setPage('register')}>
-            Регистрация
-          </button>
+          {currentUser && (
+            <span style={{ marginRight: 12, color: '#fff' }}>
+              Привет, {currentUser.name} ({currentUser.role})
+            </span>
+          )}
+          {/* Если админ залогинен, показываем кнопку входа в админку */}
+          {localStorage.getItem('role') === 'admin' && (
+            <button className="topbar-btn topbar-btn-ghost" onClick={() => setPage('admin-create')}>Админ-панель</button>
+          )}
+          <button className="topbar-btn topbar-btn-ghost" onClick={() => { setSelectedCourseId(1); setPage('course-view'); }}>Просмотреть курс #1</button>
+          <button className="topbar-btn topbar-btn-ghost" onClick={() => setIsLoginOpen(true)}>Вход</button>
+          <button className="topbar-btn" onClick={() => setPage('register')}>Регистрация</button>
         </div>
       </header>
 
@@ -646,8 +687,24 @@ function App() {
           </div>
         </div>
       </ScrollReveal>
-    </div>
-  )
+      {isLoginOpen && (
+        <AuthModal 
+          onClose={() => setIsLoginOpen(false)} 
+          onLogin={(user) => {
+            setCurrentUser(user);
+            if (user.role === 'admin') {
+              setPage('admin-create');
+            } else {
+              setPage('student-courses');
+            }
+            setIsLoginOpen(false);
+          }} 
+        />
+      )}
+    </div> // Это самый последний закрывающий тег в return
+  );
 }
+  
+
 
 export default App

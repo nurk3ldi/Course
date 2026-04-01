@@ -1,20 +1,24 @@
 const { pool } = require('../db');
 
+// --- КУРСЫ ---
+
 const createCourse = async (req, res) => {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-        const { title, description } = req.body;
+        const { title, description, price } = req.body;
         
+        // Создаем курс. Статус 'active' для мгновенного доступа или 'draft'
         const courseRes = await client.query(
-            'INSERT INTO courses (title, description, author_id, status) VALUES ($1, $2, $3, $4) RETURNING *',
-            [title, description, req.user.id, 'active']
+            'INSERT INTO courses (title, description, price, author_id, status) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+            [title, description, price || 0, req.user.id, 'active']
         );
         const course = courseRes.rows[0];
 
+        // Автоматически создаем первый модуль, чтобы админу не нужно было делать это вручную
         await client.query(
             'INSERT INTO modules (course_id, title, position) VALUES ($1, $2, $3)',
-            [course.id, 'Негізгі модуль', 1]
+            [course.id, 'Основной модуль', 1]
         );
 
         await client.query('COMMIT');
@@ -29,87 +33,130 @@ const createCourse = async (req, res) => {
 
 const getAllCourses = async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM courses');
+        // Получаем все курсы с именем автора
+        const result = await pool.query(`
+            SELECT c.*, u.name as author_name 
+            FROM courses c 
+            LEFT JOIN users u ON c.author_id = u.id 
+            ORDER BY c.created_at DESC
+        `);
         res.json(result.rows);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 };
 
-const updateCourse = async (req, res) => {
+const getFullCourseData = async (req, res) => {
     try {
         const { id } = req.params;
-        const { title, description } = req.body;
-        const result = await pool.query(
-            'UPDATE courses SET title = $1, description = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING *',
-            [title, description, id]
-        );
-        res.json(result.rows[0]);
+        
+        // Получаем структуру: Модули -> Уроки -> Задания
+        const result = await pool.query(`
+            SELECT 
+                m.id as module_id, m.title as module_title,
+                l.id as lesson_id, l.title as lesson_title, l.video_url, l.description as lesson_desc,
+                a.id as assignment_id, a.title as assignment_title, a.description as assignment_body, a.task_type as assignment_type, a.resource_url as assignment_resource
+            FROM modules m
+            LEFT JOIN lessons l ON l.module_id = m.id
+            LEFT JOIN assignments a ON a.lesson_id = l.id
+            WHERE m.course_id = $1
+            ORDER BY m.position, l.position, a.id
+        `, [id]);
+        
+        res.json(result.rows);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 };
 
-const deleteCourse = async (req, res) => {
-    try {
-        const { id } = req.params;
-        await pool.query('DELETE FROM courses WHERE id = $1', [id]);
-        res.json({ message: "Course deleted" });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-};
+// --- ВИДЕО И УРОКИ ---
 
 const addVideo = async (req, res) => {
     try {
-        const { course_id, title, url } = req.body;
+        const { course_id, title, description, url } = req.body;
         let video_url = url;
+
         if (req.file) {
             video_url = `/storage/private/${req.file.filename}`;
         }
 
-        const moduleRes = await pool.query('SELECT id FROM modules WHERE course_id = $1 LIMIT 1', [course_id]);
-        if (moduleRes.rows.length === 0) return res.status(400).json({ error: "Module not found" });
+        // Берем первый доступный модуль курса
+        const moduleRes = await pool.query('SELECT id FROM modules WHERE course_id = $1 ORDER BY position ASC LIMIT 1', [course_id]);
+        if (moduleRes.rows.length === 0) return res.status(400).json({ error: "Сначала создайте модуль для курса" });
         
         const module_id = moduleRes.rows[0].id;
 
         const result = await pool.query(
-            'INSERT INTO lessons (module_id, title, video_url) VALUES ($1, $2, $3) RETURNING *',
-            [module_id, title, video_url]
+            'INSERT INTO lessons (module_id, title, description, video_url) VALUES ($1, $2, $3, $4) RETURNING *',
+            [module_id, title, description, video_url]
         );
-        res.status(201).json({ id: result.rows[0].id, course_id, title, url: video_url });
+        res.status(201).json(result.rows[0]);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 };
 
-const updateVideo = async (req, res) => {
+// --- ЗАДАНИЯ ---
+
+const addAssignment = async (req, res) => {
     try {
-        const { id } = req.params;
-        const { title } = req.body;
+        const { lesson_id, title, description, task_type = 'text', resource_url = null } = req.body;
+        
         const result = await pool.query(
-            'UPDATE lessons SET title = $1 WHERE id = $2 RETURNING *',
-            [title, id]
+            'INSERT INTO assignments (lesson_id, title, description, task_type, resource_url) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+            [lesson_id, title, description, task_type, resource_url]
         );
-        res.json(result.rows[0]);
+        res.status(201).json(result.rows[0]);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 };
 
-const deleteVideo = async (req, res) => {
+const createModule = async (req, res) => {
     try {
-        const { id } = req.params;
-        await pool.query('DELETE FROM lessons WHERE id = $1', [id]);
-        res.json({ message: "Video deleted" });
+        const { courseId } = req.params;
+        const { title, position } = req.body;
+
+        const result = await pool.query(
+            'INSERT INTO modules (course_id, title, position) VALUES ($1, $2, $3) RETURNING *',
+            [courseId, title, position || 0]
+        );
+        res.status(201).json(result.rows[0]);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 };
+
+const addLessonToModule = async (req, res) => {
+    try {
+        const { courseId, moduleId } = req.params;
+        const { title, description, video_url, position } = req.body;
+
+        // проверка, что модуль принадлежит курсу
+        const moduleRes = await pool.query('SELECT id FROM modules WHERE id = $1 AND course_id = $2', [moduleId, courseId]);
+        if (moduleRes.rows.length === 0) {
+            return res.status(400).json({ error: 'Модуль не найден для этого курса' });
+        }
+
+        const result = await pool.query(
+            'INSERT INTO lessons (module_id, title, description, video_url, position) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+            [moduleId, title, description, video_url || null, position || 0]
+        );
+        res.status(201).json(result.rows[0]);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// --- ДОСТУП И ПРАВА ---
 
 const grantAccess = async (req, res) => {
     try {
         const { user_id, course_id } = req.body;
+        // Проверяем, нет ли уже доступа
+        const check = await pool.query('SELECT id FROM orders WHERE user_id = $1 AND course_id = $2', [user_id, course_id]);
+        if (check.rows.length > 0) return res.status(400).json({ error: "Доступ уже предоставлен" });
+
         const result = await pool.query(
             `INSERT INTO orders (user_id, course_id, price, status) VALUES ($1, $2, 0, 'paid') RETURNING *`,
             [user_id, course_id]
@@ -120,54 +167,51 @@ const grantAccess = async (req, res) => {
     }
 };
 
-const revokeAccess = async (req, res) => {
-    try {
-        const { user_id, course_id } = req.body;
-        await pool.query('DELETE FROM orders WHERE user_id = $1 AND course_id = $2', [user_id, course_id]);
-        res.json({ message: "Access revoked" });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-};
-
 const getMyCourses = async (req, res) => {
     try {
-        const userId = req.user.id;
-        const result = await pool.query(
-            `SELECT c.* FROM courses c JOIN orders o ON c.id = o.course_id WHERE o.user_id = $1 AND o.status = 'paid'`,
-            [userId]
-        );
+        // Все пользователи кроме админов видят все доступные курсы
+        // Останется как есть, когда включится система платежей
+        const query = `
+            SELECT c.*, u.name as author_name 
+            FROM courses c 
+            LEFT JOIN users u ON c.author_id = u.id 
+            WHERE c.status = 'active'
+            ORDER BY c.created_at DESC
+        `;
+        
+        const result = await pool.query(query);
         res.json(result.rows);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 };
 
-const getCourseVideos = async (req, res) => {
+// --- УДАЛЕНИЕ И ОБНОВЛЕНИЕ ---
+
+const deleteCourse = async (req, res) => {
     try {
-        const userId = req.user.id;
-        const { courseId } = req.params;
-
-        if (req.user.role !== 'admin' && req.user.role !== 'employee') {
-            const accessCheck = await pool.query(
-                "SELECT * FROM orders WHERE user_id = $1 AND course_id = $2 AND status = 'paid'",
-                [userId, courseId]
-            );
-            if (accessCheck.rows.length === 0) return res.status(403).json({ error: "Access denied" });
-        }
-
-        const result = await pool.query(
-            `SELECT l.id, l.title, l.video_url as url FROM lessons l JOIN modules m ON l.module_id = m.id WHERE m.course_id = $1 ORDER BY l.id ASC`,
-            [courseId]
-        );
-        res.json(result.rows);
+        const { id } = req.params;
+        // Каскадное удаление (модули, уроки) настроено в БД, так что удаляем только курс
+        await pool.query('DELETE FROM courses WHERE id = $1', [id]);
+        res.json({ message: "Курс и все связанные материалы удалены" });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 };
 
+// Экспортируем все функции
 module.exports = {
-    createCourse, getAllCourses, updateCourse, deleteCourse,
-    addVideo, updateVideo, deleteVideo,
-    grantAccess, revokeAccess, getMyCourses, getCourseVideos
+    createCourse,
+    getAllCourses,
+    getFullCourseData,
+    updateCourse: async (req, res) => { res.status(501).json({ error: 'Not implemented yet' }); },
+    deleteCourse,
+    addVideo,
+    addAssignment,
+    createModule,
+    addLessonToModule,
+    grantAccess,
+    revokeAccess: async (req, res) => { res.status(501).json({ error: 'Not implemented yet' }); },
+    getMyCourses,
+    getCourseVideos: async (req, res) => { res.status(501).json({ error: 'Not implemented yet' }); }
 };

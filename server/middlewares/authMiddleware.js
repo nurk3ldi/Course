@@ -1,20 +1,40 @@
 const jwt = require('jsonwebtoken');
 
-const verifyToken = (req, res, next) => {
-    const token = req.headers.authorization?.split(' ')[1];
-    if (!token) return res.status(403).json({ error: "No token" });
+const authMiddleware = (req, res, next) => {
+    // Достаем токен из заголовка Authorization
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+        return res.status(401).json({ error: "Токен отсутствует. Пожалуйста, авторизуйтесь." });
+    }
+
     try {
+        // Декодируем токен
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.user = decoded;
+        
+        // Записываем данные пользователя в объект запроса
+        // Токен содержит id, role_id и role
+        req.user = {
+            id: decoded.id,
+            role_id: decoded.role_id,
+            role: decoded.role
+        };
+        
         next();
     } catch (err) {
-        res.status(401).json({ error: "Invalid token" });
+        console.error("JWT Verify Error:", err.message);
+        return res.status(401).json({ error: "Сессия истекла или токен невалиден." });
     }
 };
 
-const verifyAdmin = (req, res, next) => {
-    if (req.user.role !== 'admin') return res.status(403).json({ error: "Admin only" });
+// Мидлвар для проверки прав администратора
+const adminMiddleware = (req, res, next) => {
+    // Роль admin проверяем через role_id и role
+    if (!req.user || (req.user.role !== 'admin' && req.user.role_id !== 1)) {
+        return res.status(403).json({ error: "Доступ запрещен. Требуются права администратора." });
+    }
     next();
 };
 
-module.exports = { verifyToken, verifyAdmin };
+module.exports = { authMiddleware, adminMiddleware };
