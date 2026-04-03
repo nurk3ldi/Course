@@ -12,10 +12,13 @@ function App() {
   const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null) // Для просмотра конкретного курса
   const [currentUser, setCurrentUser] = useState<{id:number;role:string;role_id:number;name:string} | null>(null);
   const [courses, setCourses] = useState<any[]>([]);
+  const [submissions, setSubmissions] = useState<any[]>([]);
+  const [dashboardStats, setDashboardStats] = useState({ activeCourses: 0, progress: 0, submittedTasks: 0, notifications: 0 });
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [demoRole, setDemoRole] = useState<'student' | 'admin' | 'employee' | 'client'>('student')
   const [isLoginOpen, setIsLoginOpen] = useState(false); // Состояние для модалки
 
   const isLogin = page === 'login'
@@ -29,6 +32,8 @@ function App() {
         localStorage.setItem('token', data.token)
         localStorage.setItem('role', data.user.role)
         localStorage.setItem('role_id', data.user.role_id.toString())
+        localStorage.setItem('name', data.user.name)
+        localStorage.setItem('user_id', data.user.id.toString())
         setCurrentUser(data.user)
         alert('Вы успешно вошли в систему!')
 
@@ -57,19 +62,67 @@ function App() {
     }
   }
 
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('role');
+    localStorage.removeItem('role_id');
+    setCurrentUser(null);
+    setCourses([]);
+    setSubmissions([]);
+    setPage('home');
+  };
+
+  const refreshDashboard = (myCourses: any[], mySubmissions: any[]) => {
+    const activeCourses = myCourses.length;
+    const submittedTasks = mySubmissions.length;
+    const progress = activeCourses ? Math.round((submittedTasks / (activeCourses * 3)) * 100) : 0;
+    setDashboardStats({ activeCourses, progress: Math.min(progress, 100), submittedTasks, notifications: 3 });
+  };
+
   useEffect(() => {
-    const loadCourses = async () => {
-      if (page === 'student-courses') {
+    const savedName = localStorage.getItem('name');
+    const savedRole = localStorage.getItem('role');
+    const savedRoleId = Number(localStorage.getItem('role_id')) || 0;
+    const savedUserId = Number(localStorage.getItem('user_id')) || 0;
+    if (savedName && savedRole) {
+      setCurrentUser({ id: savedUserId, name: savedName, role: savedRole, role_id: savedRoleId });
+    }
+  }, []);
+
+  const Topbar = () => (
+    <header className="topbar">
+      <div className="topbar-brand">TooOcenka LMS</div>
+      <div className="topbar-actions">
+        <button className="topbar-btn topbar-btn-ghost" onClick={() => setPage('home')}>На главную</button>
+        {currentUser && <button className="topbar-btn topbar-btn-ghost" onClick={() => setPage('profile')}>Профиль</button>}
+        {currentUser?.role === 'admin' && <button className="topbar-btn topbar-btn-ghost" onClick={() => setPage('admin-create')}>Админ-панель</button>}
+        {!currentUser && <button className="topbar-btn topbar-btn-ghost" onClick={() => setPage('login')}>Вход</button>}
+        {!currentUser && <button className="topbar-btn" onClick={() => setPage('register')}>Регистрация</button>}
+        {currentUser && <button className="topbar-btn" onClick={handleLogout}>Выйти</button>}
+      </div>
+    </header>
+  );
+
+  useEffect(() => {
+    const loadCoursesAndStats = async () => {
+      if (page === 'student-courses' || page === 'profile' || page === 'home') {
         try {
           const token = localStorage.getItem('token') || '';
           const courseList = await getMyCourses(token);
           setCourses(courseList);
+
+          const submissionsRes = await fetch('http://localhost:5000/api/assignments/my', {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const mySubmissions = submissionsRes.ok ? await submissionsRes.json() : [];
+          setSubmissions(mySubmissions);
+          refreshDashboard(courseList, mySubmissions);
         } catch (err: unknown) {
-          console.error('Не удалось загрузить курсы', err);
+          console.error('Не удалось загрузить курсы/статистику', err);
         }
       }
     };
-    loadCourses();
+    loadCoursesAndStats();
   }, [page]);
 
   // Рендеринг страницы сброса пароля
@@ -81,10 +134,7 @@ function App() {
   if (page === 'admin-create') {
     return (
       <div className="root">
-        <header className="topbar">
-          <div className="topbar-brand">TooOcenka LMS | Admin</div>
-          <button className="topbar-btn topbar-btn-ghost" onClick={() => setPage('home')}>На главную</button>
-        </header>
+        <Topbar />
         <AdminCreateCourse />
       </div>
     )
@@ -94,10 +144,7 @@ function App() {
   if (page === 'student-courses') {
     return (
       <div className="root">
-        <header className="topbar">
-          <div className="topbar-brand">TooOcenka LMS | Курсы</div>
-          <button className="topbar-btn topbar-btn-ghost" onClick={() => setPage('home')}>На главную</button>
-        </header>
+        <Topbar />
         <div style={{ maxWidth: 1024, margin: '24px auto' }}>
           <h2>Ваши курсы</h2>
           {courses.length === 0 ? (
@@ -124,11 +171,53 @@ function App() {
   if (page === 'course-view' && selectedCourseId) {
     return (
       <div className="root">
-        <header className="topbar">
-          <div className="topbar-brand">Просмотр курса</div>
-          <button className="topbar-btn topbar-btn-ghost" onClick={() => setPage('home')}>Назад к списку</button>
-        </header>
+        <Topbar />
         <CourseViewer courseId={selectedCourseId} />
+      </div>
+    )
+  }
+
+  // Рендеринг профиля
+  if (page === 'profile') {
+    return (
+      <div className="root">
+        <Topbar />
+        <div className="profile-page">
+          <div className="profile-header">
+            <div className="profile-avatar">{currentUser?.name.split(' ').map(x => x[0]).join('').toUpperCase()}</div>
+            <div>
+              <h1>{currentUser?.name || 'Пользователь'}</h1>
+              <p>Роль: {currentUser?.role}</p>
+              <p style={{ margin: '6px 0 0 0', color: '#6b7280', fontSize: '13px' }}>Всего ответов: {submissions.length}</p>
+            </div>
+          </div>
+
+          <div className="profile-stats">
+            <div className="profile-stat">Активные курсы: {dashboardStats.activeCourses}</div>
+            <div className="profile-stat">Прогресс: {dashboardStats.progress}%</div>
+            <div className="profile-stat">Заданий сдано: {dashboardStats.submittedTasks}</div>
+            <div className="profile-stat">Уведомлений: {dashboardStats.notifications}</div>
+          </div>
+
+          <div className="profile-courses">
+            <h2>Ваши курсы</h2>
+            {courses.length === 0 ? (
+              <p>Пока нет курсов. Обратитесь к администратору.</p>
+            ) : (
+              <div className="course-grid">
+                {courses.map(course => (
+                  <div key={course.id} className="course-card">
+                    <h3>{course.title}</h3>
+                    <p>{course.description}</p>
+                    <button className="btn-primary" onClick={() => { setSelectedCourseId(course.id); setPage('course-view'); }}>
+                      Перейти
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     )
   }
@@ -137,12 +226,7 @@ function App() {
   if (page === 'login' || page === 'register') {
     return (
       <div className="root">
-        <header className="topbar">
-          <div className="topbar-brand">TooOcenka LMS</div>
-          <div className="topbar-actions">
-            <button className="topbar-btn topbar-btn-ghost" onClick={() => setPage('home')}>На главную</button>
-          </div>
-        </header>
+        <Topbar />
 
         <div className="auth-page">
           <div className="auth-card">
@@ -160,6 +244,40 @@ function App() {
                 <span>Email</span>
                 <input type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
               </label>
+
+              {isLogin && (
+                <label className="auth-field">
+                  <span>Роль для входа (демо)</span>
+                  <select
+                    value={demoRole}
+                    onChange={(e) => {
+                      const role = e.target.value as 'student' | 'admin' | 'employee' | 'client';
+                      setDemoRole(role);
+
+                      if (role === 'admin') {
+                        setEmail('admin@mail.com');
+                        setPassword('admin123');
+                      } else if (role === 'student') {
+                        setEmail('student@mail.com');
+                        setPassword('student123');
+                      } else if (role === 'client') {
+                        setEmail('client@mail.com');
+                        setPassword('client123');
+                      } else if (role === 'employee') {
+                        setEmail('employee@mail.com');
+                        setPassword('employee123');
+                      }
+                    }}
+                    style={{ padding: '12px 14px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '14px', fontFamily: 'inherit' }}
+                  >
+                    <option value="student">Ученик</option>
+                    <option value="client">Клиент</option>
+                    <option value="employee">Сотрудник</option>
+                    <option value="admin">Администратор</option>
+                  </select>
+                </label>
+              )}
+
               <label className="auth-field">
                 <span>Пароль</span>
                 <input type="password" placeholder="Минимум 8 символов" value={password} onChange={(e) => setPassword(e.target.value)} required />
@@ -193,23 +311,28 @@ function App() {
   // Главная страница (Home)
   return (
     <div className="root">
-      <header className="topbar">
-        <div className="topbar-brand">TooOcenka LMS</div>
-        <div className="topbar-actions">
-          {currentUser && (
-            <span style={{ marginRight: 12, color: '#fff' }}>
-              Привет, {currentUser.name} ({currentUser.role})
-            </span>
-          )}
-          {/* Если админ залогинен, показываем кнопку входа в админку */}
-          {localStorage.getItem('role') === 'admin' && (
-            <button className="topbar-btn topbar-btn-ghost" onClick={() => setPage('admin-create')}>Админ-панель</button>
-          )}
-          <button className="topbar-btn topbar-btn-ghost" onClick={() => { setSelectedCourseId(1); setPage('course-view'); }}>Просмотреть курс #1</button>
-          <button className="topbar-btn topbar-btn-ghost" onClick={() => setIsLoginOpen(true)}>Вход</button>
-          <button className="topbar-btn" onClick={() => setPage('register')}>Регистрация</button>
-        </div>
-      </header>
+      <Topbar />
+
+      {currentUser && (
+        <section className="dashboard-overview">
+          <div className="dashboard-card">
+            <div className="dashboard-card-title">Активные курсы</div>
+            <div className="dashboard-card-value">{dashboardStats.activeCourses}</div>
+          </div>
+          <div className="dashboard-card">
+            <div className="dashboard-card-title">Прогресс</div>
+            <div className="dashboard-card-value">{dashboardStats.progress}%</div>
+          </div>
+          <div className="dashboard-card">
+            <div className="dashboard-card-title">Сдано заданий</div>
+            <div className="dashboard-card-value">{dashboardStats.submittedTasks}</div>
+          </div>
+          <div className="dashboard-card">
+            <div className="dashboard-card-title">Уведомления</div>
+            <div className="dashboard-card-value">{dashboardStats.notifications}</div>
+          </div>
+        </section>
+      )}
 
       <div className="hero">
         <div className="hero-main">

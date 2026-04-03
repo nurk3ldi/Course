@@ -75,6 +75,7 @@ function getYouTubeEmbedUrl(url: string): string {
 const CourseViewer = ({ courseId }: CourseViewerProps) => {
   const [modules, setModules] = useState<ModuleItem[]>([]);
   const [activeLesson, setActiveLesson] = useState<LessonItem | null>(null);
+  const [completedLessons, setCompletedLessons] = useState<Set<number>>(new Set());
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [answerText, setAnswerText] = useState('');
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<number | null>(null);
@@ -161,6 +162,22 @@ const CourseViewer = ({ courseId }: CourseViewerProps) => {
       const msg = err instanceof Error ? err.message : 'Ошибка отправки ответа';
       alert('Ошибка: ' + msg);
     }
+  };
+
+  const markLessonComplete = (lessonId: number) => {
+    setCompletedLessons(prev => new Set(prev).add(lessonId));
+  };
+
+  const goToNextLesson = () => {
+    const allLessons = modules.flatMap(m => m.lessons);
+    if (!activeLesson) return;
+    const currentIndex = allLessons.findIndex(l => l.lesson_id === activeLesson.lesson_id);
+    if (currentIndex === -1 || currentIndex === allLessons.length - 1) {
+      alert('Это последний урок курса.');
+      return;
+    }
+    const next = allLessons[currentIndex + 1];
+    setActiveLesson(next);
   };
 
   const toggleModule = (moduleId: number) => {
@@ -297,13 +314,48 @@ const CourseViewer = ({ courseId }: CourseViewerProps) => {
         {activeLesson ? (
           <>
             {/* Lesson Header */}
-            <div style={{ marginBottom: '32px' }}>
+            <div style={{ marginBottom: '24px' }}>
               <h1 style={{ margin: '0 0 12px 0', fontSize: '32px', fontWeight: 700, color: '#111827' }}>
                 {activeLesson.lesson_title}
               </h1>
-              <p style={{ margin: '0', color: '#6b7280', fontSize: '15px', lineHeight: '1.6' }}>
+              <p style={{ margin: '0 0 12px 0', color: '#6b7280', fontSize: '15px', lineHeight: '1.6' }}>
                 {activeLesson.lesson_desc}
               </p>
+
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ color: '#047857', fontWeight: 700 }}>
+                  Пройдено: {completedLessons.size} / {modules.flatMap(m => m.lessons).length}
+                </span>
+                <button
+                  onClick={() => activeLesson && markLessonComplete(activeLesson.lesson_id)}
+                  style={{
+                    padding: '10px 18px',
+                    borderRadius: '8px',
+                    border: '1px solid #059669',
+                    background: completedLessons.has(activeLesson.lesson_id) ? '#dcfce7' : '#10b981',
+                    color: completedLessons.has(activeLesson.lesson_id) ? '#166534' : 'white',
+                    cursor: 'pointer',
+                    fontWeight: 700
+                  }}
+                >
+                  {completedLessons.has(activeLesson.lesson_id) ? 'Урок пройден' : 'Отметить как пройденный'}
+                </button>
+
+                <button
+                  onClick={goToNextLesson}
+                  style={{
+                    padding: '10px 18px',
+                    borderRadius: '8px',
+                    border: '1px solid #0ea5e9',
+                    background: '#0284c7',
+                    color: 'white',
+                    cursor: 'pointer',
+                    fontWeight: 700
+                  }}
+                >
+                  Следующий урок
+                </button>
+              </div>
             </div>
 
             {/* Video Section */}

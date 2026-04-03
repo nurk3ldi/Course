@@ -6,6 +6,7 @@ const { authMiddleware } = require('../middlewares/authMiddleware');
 // --- СПЕЦИФИЧНЫЕ ГЕТ РОУТЫ (выше, чтобы не конфликтовать) ---
 router.get('/my', authMiddleware, courseController.getMyCourses);
 router.get('/:id/full', authMiddleware, courseController.getFullCourseData);
+router.get('/:id/videos', authMiddleware, courseController.getCourseVideos);
 
 // --- ОБЩИЕ ГЕТ РОУТЫ ---
 router.get('/', authMiddleware, courseController.getAllCourses);

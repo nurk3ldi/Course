@@ -112,13 +112,7 @@ const AdminCreateCourse = () => {
         fontSize: '14px',
         fontFamily: 'inherit',
         transition: 'all 0.2s ease',
-        boxSizing: 'box-border' as const
-    };
-
-    const inputFocusStyle = {
-        ...inputStyle,
-        borderColor: '#059669',
-        boxShadow: '0 0 0 3px rgba(5, 150, 105, 0.1)'
+        boxSizing: 'border-box' as const
     };
 
     const buttonStyle = {
@@ -143,14 +137,6 @@ const AdminCreateCourse = () => {
         marginBottom: '20px',
         border: '1px solid #e5e7eb',
         boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)'
-    };
-
-    const stepStyle = {
-        display: activeStep === 1 ? 'block' as const : 'none' as const
-    };
-
-    const step2Style = {
-        display: activeStep > 1 ? 'block' as const : 'none' as const
     };
 
     if (!createdCourseId) {

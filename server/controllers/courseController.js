@@ -191,9 +191,63 @@ const getMyCourses = async (req, res) => {
 const deleteCourse = async (req, res) => {
     try {
         const { id } = req.params;
-        // Каскадное удаление (модули, уроки) настроено в БД, так что удаляем только курс
         await pool.query('DELETE FROM courses WHERE id = $1', [id]);
         res.json({ message: "Курс и все связанные материалы удалены" });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+const updateCourse = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { title, description, price, status } = req.body;
+
+        const result = await pool.query(
+            `UPDATE courses SET title = $1, description = $2, price = $3, status = $4, updated_at = NOW() WHERE id = $5 RETURNING *`,
+            [title, description, price || 0, status || 'active', id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Курс не найден' });
+        }
+
+        res.json(result.rows[0]);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+const revokeAccess = async (req, res) => {
+    try {
+        const { user_id, course_id } = req.body;
+        const result = await pool.query(
+            'DELETE FROM orders WHERE user_id = $1 AND course_id = $2 RETURNING *',
+            [user_id, course_id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Доступ не найден' });
+        }
+
+        res.json({ message: 'Доступ отозван', revoked: result.rows[0] });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+const getCourseVideos = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await pool.query(
+            `SELECT l.id as lesson_id, l.title as lesson_title, l.video_url FROM lessons l
+            JOIN modules m ON m.id = l.module_id
+            WHERE m.course_id = $1
+            ORDER BY m.position, l.position`,
+            [id]
+        );
+
+        res.json(result.rows);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -204,14 +258,14 @@ module.exports = {
     createCourse,
     getAllCourses,
     getFullCourseData,
-    updateCourse: async (req, res) => { res.status(501).json({ error: 'Not implemented yet' }); },
+    updateCourse,
     deleteCourse,
     addVideo,
     addAssignment,
     createModule,
     addLessonToModule,
     grantAccess,
-    revokeAccess: async (req, res) => { res.status(501).json({ error: 'Not implemented yet' }); },
+    revokeAccess,
     getMyCourses,
-    getCourseVideos: async (req, res) => { res.status(501).json({ error: 'Not implemented yet' }); }
+    getCourseVideos
 };
