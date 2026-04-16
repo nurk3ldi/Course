@@ -1,8 +1,22 @@
 const express = require('express');
 const router = express.Router();
+const { authMiddleware } = require('../middlewares/authMiddleware');
+const { allowRoles } = require('../middlewares/roleMiddleware');
+const { fileUpload } = require('../middlewares/uploadMiddleware');
+const {
+    uploadFile,
+    getFileById,
+    deleteFile
+} = require('../controllers/fileController');
 
-router.post('/upload', (req, res) => res.send('POST /api/files/upload'));
-router.get('/:id', (req, res) => res.send(`GET /api/files/${req.params.id}`));
-router.delete('/:id', (req, res) => res.send(`DELETE /api/files/${req.params.id}`));
+router.post(
+    '/upload',
+    authMiddleware,
+    allowRoles('admin', 'employee', 'student'),
+    fileUpload.single('file'),
+    uploadFile
+);
+router.get('/:id', authMiddleware, allowRoles('admin', 'employee', 'student'), getFileById);
+router.delete('/:id', authMiddleware, allowRoles('admin', 'employee', 'student'), deleteFile);
 
 module.exports = router;

@@ -1,0 +1,1 @@
+-- pg_dump failed. Please verify PostgreSQL client tools.

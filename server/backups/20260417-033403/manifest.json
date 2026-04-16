@@ -1,0 +1,8 @@
+{
+  "created_at": "2026-04-16T21:34:03.543Z",
+  "backup_dir": "C:\\Nurkeldi\\Project\\Course\\server\\backups\\20260417-033403",
+  "db_backup_status": "failed",
+  "db_backup_error": "spawn pg_dump ENOENT",
+  "db_file": "C:\\Nurkeldi\\Project\\Course\\server\\backups\\20260417-033403\\db.sql",
+  "files_dir": "C:\\Nurkeldi\\Project\\Course\\server\\backups\\20260417-033403\\files"
+}

@@ -6,7 +6,13 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node tests/run-tests.js",
+    "test:e2e": "set RUN_E2E=1&& node tests/run-tests.js",
+    "migrate": "node scripts/migrate.js",
+    "backup": "node scripts/backup.js",
+    "backup:prune": "node scripts/pruneBackups.js",
+    "backup:daily": "node scripts/dailyBackupRunner.js",
+    "restore": "node scripts/restore.js"
   },
   "keywords": [],
   "author": "",

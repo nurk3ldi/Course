@@ -1,6 +1,8 @@
 const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+const { runMigrations } = require('./services/migrationService');
 
 const pool = new Pool({
     user: process.env.DB_USER,
@@ -11,6 +13,8 @@ const pool = new Pool({
 });
 
 const initDB = async () => {
+    await runMigrations(pool);
+
     await pool.query(`
         CREATE TABLE IF NOT EXISTS roles (
             id SERIAL PRIMARY KEY,
@@ -125,6 +129,10 @@ const initDB = async () => {
     // Добавления колонок для типов заданий и ресурсов
     await pool.query(`ALTER TABLE assignments ADD COLUMN IF NOT EXISTS task_type VARCHAR(20) DEFAULT 'text';`);
     await pool.query(`ALTER TABLE assignments ADD COLUMN IF NOT EXISTS resource_url TEXT;`);
+    await pool.query(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS short_description TEXT;`);
+    await pool.query(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS category VARCHAR(120);`);
+    await pool.query(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS duration_text VARCHAR(120);`);
+    await pool.query(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS assigned_employee_id INT REFERENCES users(id) ON DELETE SET NULL;`);
 
     try {
         await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_code VARCHAR(6);`);

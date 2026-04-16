@@ -1,0 +1,314 @@
+openapi: 3.0.3
+info:
+  title: LMS Backend API
+  version: 1.1.0
+  description: |
+    Contract for LMS backend including RBAC, protected video streaming, orders, payments, and assignments.
+servers:
+  - url: http://localhost:5000
+tags:
+  - name: Auth
+  - name: Courses
+  - name: Lessons
+  - name: Assignments
+  - name: Files
+  - name: Orders
+  - name: Payments
+  - name: Video
+  - name: System
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+    Course:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+          format: float
+        status:
+          type: string
+    Order:
+      type: object
+      properties:
+        id: { type: integer }
+        user_id: { type: integer }
+        course_id: { type: integer }
+        price:
+          type: number
+          format: float
+        status: { type: string }
+    Payment:
+      type: object
+      properties:
+        id: { type: integer }
+        order_id: { type: integer }
+        payment_system: { type: string }
+        amount:
+          type: number
+          format: float
+        status: { type: string }
+paths:
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: JWT and user profile
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/courses:
+    get:
+      tags: [Courses]
+      security: [{ bearerAuth: [] }]
+      summary: List catalog courses
+      responses:
+        '200':
+          description: Course list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Course'
+    post:
+      tags: [Courses]
+      security: [{ bearerAuth: [] }]
+      summary: Create course (admin)
+      responses:
+        '201':
+          description: Created course
+  /api/courses/{id}:
+    get:
+      tags: [Courses]
+      security: [{ bearerAuth: [] }]
+      summary: Get course details
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Course
+  /api/courses/{id}/full:
+    get:
+      tags: [Courses]
+      security: [{ bearerAuth: [] }]
+      summary: Get full learning tree for enrolled student/staff
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Modules-lessons-assignments rows
+  /api/lessons/{id}:
+    get:
+      tags: [Lessons]
+      security: [{ bearerAuth: [] }]
+      summary: Get lesson
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Lesson payload
+  /api/assignments:
+    post:
+      tags: [Assignments]
+      security: [{ bearerAuth: [] }]
+      summary: Create assignment (admin)
+      responses:
+        '201':
+          description: Assignment created
+  /api/assignments/{id}:
+    get:
+      tags: [Assignments]
+      security: [{ bearerAuth: [] }]
+      summary: Get assignment by id
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Assignment
+  /api/assignments/submit:
+    post:
+      tags: [Assignments]
+      security: [{ bearerAuth: [] }]
+      summary: Submit assignment (student)
+      responses:
+        '200':
+          description: Submitted
+  /api/assignments/review:
+    put:
+      tags: [Assignments]
+      security: [{ bearerAuth: [] }]
+      summary: Review submission (admin/employee)
+      responses:
+        '200':
+          description: Reviewed
+  /api/files/upload:
+    post:
+      tags: [Files]
+      security: [{ bearerAuth: [] }]
+      summary: Upload private file
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: File uploaded
+  /api/orders:
+    post:
+      tags: [Orders]
+      security: [{ bearerAuth: [] }]
+      summary: Create order (client/admin)
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+    get:
+      tags: [Orders]
+      security: [{ bearerAuth: [] }]
+      summary: List own orders
+      responses:
+        '200':
+          description: Orders
+  /api/payments:
+    post:
+      tags: [Payments]
+      security: [{ bearerAuth: [] }]
+      summary: Create payment record
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+    get:
+      tags: [Payments]
+      security: [{ bearerAuth: [] }]
+      summary: List payments
+      responses:
+        '200':
+          description: Payments
+  /api/videos/{lessonId}/url:
+    get:
+      tags: [Video]
+      security: [{ bearerAuth: [] }]
+      summary: Generate signed stream URL
+      parameters:
+        - in: path
+          name: lessonId
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Signed URL payload
+  /api/videos/stream/{lessonId}/{asset}:
+    get:
+      tags: [Video]
+      summary: Stream signed HLS asset
+      parameters:
+        - in: path
+          name: lessonId
+          required: true
+          schema: { type: integer }
+        - in: path
+          name: asset
+          required: true
+          schema: { type: string }
+        - in: query
+          name: token
+          required: true
+          schema: { type: string }
+        - in: query
+          name: expire
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: user_id
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: nonce
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Playlist or segment content
+  /api/system/healthz:
+    get:
+      tags: [System]
+      summary: Liveness + quick metrics
+      responses:
+        '200':
+          description: Healthy
+  /api/system/readyz:
+    get:
+      tags: [System]
+      summary: Readiness + db check
+      responses:
+        '200':
+          description: Ready
+        '503':
+          description: Not ready
+  /api/system/metrics:
+    get:
+      tags: [System]
+      summary: Prometheus-compatible metrics
+      responses:
+        '200':
+          description: Text metrics
